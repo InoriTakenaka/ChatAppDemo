@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,6 +10,55 @@ using System.Net;
 
 namespace ConsoleApp {
     public delegate void ClientDisconnect(object sender, EventArgs e);
+    class MessageBuffer {
+        readonly int size_ = 1024;
+        /// <summary>
+        /// data buffer
+        /// </summary>
+        byte[] buffer_;
+        /// <summary>
+        /// current index
+        /// </summary>
+        int cursor_;
+
+
+        public byte[] Buffer => buffer_;
+        public int Cursor => cursor_;
+        /// <summary>
+        /// remaining space in buffer
+        /// </summary>
+        public int Remain => size_ - cursor_;
+        public MessageBuffer() {
+            buffer_ = new byte[size_];
+            cursor_ = 0;
+        }
+
+        /// <summary>
+        /// move the cursor , and return lastest cursor position
+        /// </summary>
+        /// <param name="offset"></param>
+        /// <returns></returns>
+        public int Seek(int offset=1) {
+            cursor_ += offset;
+            return cursor_;
+        }
+
+        public void Clear() {
+            buffer_.Initialize();
+        }
+
+        //  6 4  6 7 8 9
+        public byte[] Get(int startPos,int offset) {
+            byte[] result = new byte[offset];
+            int j = 0;
+            for (int i = startPos; i < offset; i++) {
+                if (i < buffer_.Length) {
+                    result[j] = buffer_[i];
+                } else break;               
+            }
+            return result;
+        }
+    }
     class Session {
 
         public event ClientDisconnect OnClientDisconnected;
@@ -36,19 +86,24 @@ namespace ConsoleApp {
         }
 
         public string Recive() {
-            byte[] buffer = new byte[512];
+            MessageBuffer buffer = new MessageBuffer();
             //
             int rec;
 
             try {
-                rec = client_.Receive(buffer, SocketFlags.None);
+                int start = buffer.Cursor;
+                rec = client_.Receive(buffer.Buffer,buffer.Cursor,512,SocketFlags.None);
+                buffer.Seek();
+                int count = 0;
+                while (rec > 0) {
+                    count += rec;
+                    rec = client_.Receive(buffer.Buffer, buffer.Cursor, 512, SocketFlags.None);
+                }
 
                 if (rec > 0) {
 
-                    string msg = Encoding.UTF8.GetString(buffer);
-
+                    string msg = Encoding.UTF8.GetString(buffer.Get(start,count));
                     string echo = $"[{DateTime.Now.ToShortTimeString()}]::SENT::{msg}";
-
                     Console.WriteLine(echo);
 
                     byte[] msgBuffer = Encoding.UTF8.GetBytes(echo);
@@ -61,9 +116,9 @@ namespace ConsoleApp {
             } catch (SocketException) {
                 Console.WriteLine($"[{ DateTime.Now.ToShortTimeString()} occur, remote host disconnected.");
             } finally {
-                this.client_.Close();
-                this.client_ = null;
-                this.OnClientDisconnected(this, new EventArgs());
+                client_.Close();
+                client_ = null;
+                OnClientDisconnected(this, new EventArgs());
             }
 
             return string.Empty;
