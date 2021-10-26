@@ -8,7 +8,7 @@ using System.Net.Sockets;
 using System.Net;
 
 
-namespace ClientApp {
+namespace ChatClient {
     class Client {
         private Socket socket_;
         public Client() {

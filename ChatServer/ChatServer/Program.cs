@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Net.Sockets;
 using System.Net;
 
-namespace ConsoleApp {
+namespace ChatServer {
     public delegate void ClientDisconnect(object sender, EventArgs e);
     class Session {
 
