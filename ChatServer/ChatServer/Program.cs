@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,6 +10,41 @@ using System.Net;
 
 namespace ChatServer {
     public delegate void ClientDisconnect(object sender, EventArgs e);
+    class MessageBuffer {
+        readonly int size_ = 10;
+        /// <summary>
+        /// data buffer
+        /// </summary>
+        byte[] buffer_;
+        /// <summary>
+        /// current index
+        /// </summary>
+        int cursor_;
+        public byte[] Buffer => buffer_;
+        public int Cursor => cursor_;
+        /// <summary>
+        /// remaining space in buffer
+        /// </summary>
+        public int Remain => size_ - cursor_;
+        public MessageBuffer() {
+            buffer_ = new byte[size_];
+            cursor_ = 0;
+        }
+
+        /// <summary>
+        /// move the cursor , and return lastest cursor position
+        /// </summary>
+        /// <param name="offset"></param>
+        /// <returns></returns>
+        public int Seek(int offset=1) {
+            cursor_ += offset;
+            return cursor_;
+        }
+
+        public void Clear() {
+            buffer_.Initialize();
+        }
+    }
     class Session {
 
         public event ClientDisconnect OnClientDisconnected;
@@ -36,19 +72,28 @@ namespace ChatServer {
         }
 
         public string Recive() {
-            byte[] buffer = new byte[512];
+            MessageBuffer message_buffer = new MessageBuffer();
             //
             int rec;
 
             try {
-                rec = client_.Receive(buffer, SocketFlags.None);
+                int start = message_buffer.Cursor;
+                rec = client_.Receive(message_buffer.Buffer,message_buffer.Cursor,3,SocketFlags.None);
+                message_buffer.Seek(rec);
+                int count = 0;
+                while (rec > 0) {
+                    count += rec;
+                    if (client_.Poll(1, SelectMode.SelectRead)) {
+                        rec = client_.Receive(message_buffer.Buffer, message_buffer.Cursor, 3, SocketFlags.None);
+                    } else {
+                        break;
+                    }
+                }
 
-                if (rec > 0) {
+                if (count > 0) {
 
-                    string msg = Encoding.UTF8.GetString(buffer);
-
+                    string msg = Encoding.UTF8.GetString(message_buffer.Buffer);
                     string echo = $"[{DateTime.Now.ToShortTimeString()}]::SENT::{msg}";
-
                     Console.WriteLine(echo);
 
                     byte[] msgBuffer = Encoding.UTF8.GetBytes(echo);
@@ -60,11 +105,10 @@ namespace ChatServer {
                 }
             } catch (SocketException) {
                 Console.WriteLine($"[{ DateTime.Now.ToShortTimeString()} occur, remote host disconnected.");
-            } finally {
-                this.client_.Close();
-                this.client_ = null;
-                this.OnClientDisconnected(this, new EventArgs());
-            }
+                client_.Close();
+                client_ = null;
+                OnClientDisconnected(this, new EventArgs());
+            } 
 
             return string.Empty;
         }
@@ -74,7 +118,6 @@ namespace ChatServer {
         /// </summary>
         /// <returns></returns>
         public bool IsAlive() {
-
             return client_.Poll(100, SelectMode.SelectRead);
         }
 
